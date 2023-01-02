@@ -8,6 +8,10 @@
 #include "spinlock.h"
 #include "rsdl.h"
 
+struct proc* set[2][64];
+int count[2] = {0, 0};
+int active = 0;
+
 struct
 {
   struct spinlock lock;
@@ -91,7 +95,10 @@ allocproc(void)
 found:
   p->state = EMBRYO;
   p->pid = nextpid++;
+
   p->ticks_left = RSDL_PROC_QUANTUM;
+  set[active][count[active]] = p;
+  count[active]++;
   
   release(&ptable.lock);
 
@@ -354,62 +361,110 @@ void scheduler(void)
 
     // Loop over process table looking for process to run.
     acquire(&ptable.lock);
-    for (p = ptable.proc; p < &ptable.proc[NPROC]; p++)
+
+    //check if there are still runnable proc in active set
+    int activeset_runnable = 0;
+    for (int i=0;i<count[active];i++)
     {
-      if (p->state != RUNNABLE)
+      if (set[active][i]->state != RUNNABLE)
+        activeset_runnable++;
+    }
+
+    //swap active and expired sets if no runnable proc in active set
+    if(activeset_runnable == 0){
+       active = active == 0? 1: 0;
+    }
+
+
+    for (int i=0;i<count[active];i++)
+    {
+      if (set[active][i]->state != RUNNABLE)
         continue;
 
       // Switch to chosen process.  It is the process's job
       // to release ptable.lock and then reacquire it
       // before jumping back to us.
+      p = set[active][i];
       c->proc = p;
       switchuvm(p);
       p->state = RUNNING;
       
+      int curr_set = active;
+      int printing_done = 0;
+
+      printing_sets:
       if (schedlog_active)
       {
-        cprintf("%d|active|0(0)", ticks);
+        
         if (ticks > schedlog_lasttick)
         {
           schedlog_active = 0;
-          // cprintf(" | expired");
         }
         else
         {
-          // cprintf(" | active");
-          struct proc *pp;
-          int highest_idx = -1;
-          for (int k = 0; k < NPROC; k++)
-          {
-            pp = &ptable.proc[k];
-            if (pp->state != UNUSED)
-            {
-              highest_idx = k;
-            }
+          if (curr_set == active){
+            cprintf("%d|active|0(0)", ticks);
+          }else{
+            cprintf("%d|expired|0(0)", ticks);
           }
-          for (int k = 0; k <= highest_idx; k++)
+
+          struct proc *pp;
+          
+          for (int k = 0; k < count[curr_set]; k++)
           {
-            pp = &ptable.proc[k];
-            if (pp->ticks_left > 0)
-            {
+            pp = set[curr_set][k];
+            // if (pp->ticks_left > 0)
+            // {
+            //   cprintf(",[%d]%s:%d(%d)", pp->pid, pp->name, pp->state, pp->ticks_left);
+            // }
+            if (pp->state == UNUSED)
+              cprintf("[%d] ---:0", pp->pid);
+            else if (pp->state == RUNNING)
+              cprintf(",[%d]*%s:%d(%d)",  pp->pid, pp->name, pp->state, pp->ticks_left);
+            else
               cprintf(",[%d]%s:%d(%d)", pp->pid, pp->name, pp->state, pp->ticks_left);
-            }
-            // if (pp->state == UNUSED)
-            //   cprintf("[%d] ---:0", k);
-            // else if (pp->state == RUNNING)
-            //   cprintf("[%d]*%s:%d", k, pp->name, pp->state);
-            // else
-            //   cprintf("[%d] %s:%d", k, pp->name, pp->state);
           }
           cprintf("\n");
         }
+        printing_done++;
+        if(printing_done != 2){
+          curr_set = curr_set == 0? 1: 0;
+          goto printing_sets;
+        }
       }
+      
       swtch(&(c->scheduler), p->context);
       switchkvm();
+
+      //move process with consumed quantum to expired set
+      if (p->ticks_left <= 0){
+        p->ticks_left = RSDL_PROC_QUANTUM;
+        //p->state = RUNNABLE;
+        if(active==0){
+          set[1][count[1]] = p;
+          count[1]++;
+          
+        }
+        else{
+          set[0][count[0]] = p;
+          count[0]++;
+        }
+        //delete proc from active set
+        //set[active][i] = NULL;
+        for(int j=i;j<count[active]-1;j++){
+          set[active][j] = set[active][j+1];
+        }
+							  
+				//set[active][count[active]] = NULL;
+				count[active]--;
+      }
 
       // Process is done running for now.
       // It should have changed its p->state before coming back.
       c->proc = 0;
+
+
+      
     }
     release(&ptable.lock);
   }
