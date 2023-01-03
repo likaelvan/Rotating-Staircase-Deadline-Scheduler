@@ -417,14 +417,15 @@ void scheduler(void)
             // {
             //   cprintf(",[%d]%s:%d(%d)", pp->pid, pp->name, pp->state, pp->ticks_left);
             // }
-            if (pp->state == UNUSED)
-              cprintf("[%d] ---:0", pp->pid);
-            else if (pp->state == RUNNING)
-              cprintf(",[%d]*%s:%d(%d)",  pp->pid, pp->name, pp->state, pp->ticks_left);
+            if (pp->state == RUNNING)
+              cprintf(",[%d]*%s:%d(%d)", pp->pid, pp->name, pp->state, pp->ticks_left);
             else
               cprintf(",[%d]%s:%d(%d)", pp->pid, pp->name, pp->state, pp->ticks_left);
           }
           cprintf("\n");
+
+          if(curr_set != active)
+            cprintf("\n");
         }
         printing_done++;
         if(printing_done != 2){
