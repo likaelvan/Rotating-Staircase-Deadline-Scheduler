@@ -6,7 +6,9 @@
 #include "x86.h"
 #include "proc.h"
 #include "spinlock.h"
-#include "rsdl.h"
+
+//  rsdl Header
+#include "rsdl.h"                                       
 
 struct
 {
@@ -91,7 +93,9 @@ allocproc(void)
 found:
   p->state = EMBRYO;
   p->pid = nextpid++;
-  p->ticks_left = RSDL_PROC_QUANTUM;
+
+  // Set Ticks for RSDL Procell-Local Quanta
+  p->ticks_left = RSDL_PROC_QUANTUM;    
   
   release(&ptable.lock);
 
@@ -368,15 +372,14 @@ void scheduler(void)
       
       if (schedlog_active)
       {
-        cprintf("%d|active|0(0)", ticks);
         if (ticks > schedlog_lasttick)
         {
           schedlog_active = 0;
-          // cprintf(" | expired");
         }
         else
         {
-          // cprintf(" | active");
+
+          cprintf("%d|active|0(0)", ticks);
           struct proc *pp;
           int highest_idx = -1;
           for (int k = 0; k < NPROC; k++)
@@ -394,15 +397,9 @@ void scheduler(void)
             {
               cprintf(",[%d]%s:%d(%d)", pp->pid, pp->name, pp->state, pp->ticks_left);
             }
-            // if (pp->state == UNUSED)
-            //   cprintf("[%d] ---:0", k);
-            // else if (pp->state == RUNNING)
-            //   cprintf("[%d]*%s:%d", k, pp->name, pp->state);
-            // else
-            //   cprintf("[%d] %s:%d", k, pp->name, pp->state);
           }
           cprintf("\n");
-        }
+        } 
       }
       swtch(&(c->scheduler), p->context);
       switchkvm();
