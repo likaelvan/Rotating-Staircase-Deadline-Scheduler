@@ -393,10 +393,7 @@ void scheduler(void)
           for (int k = 0; k <= highest_idx; k++)
           {
             pp = &ptable.proc[k];
-            if (pp->ticks_left > 0)
-            {
-              cprintf(",[%d]%s:%d(%d)", pp->pid, pp->name, pp->state, pp->ticks_left);
-            }
+            cprintf(",[%d]%s:%d(%d)", pp->pid, pp->name, pp->state, pp->ticks_left);
           }
           cprintf("\n");
         } 
