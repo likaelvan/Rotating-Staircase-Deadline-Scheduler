@@ -8,9 +8,11 @@
 #include "spinlock.h"
 #include "rsdl.h"
 
-struct proc* set[2][64];
-int count[2] = {0, 0};
-int active = 0;
+struct proc* activeSet[64];
+struct proc* expiredSet[64];
+struct proc* tempSet[64];
+int countActive = 0;
+int countExpired = 0;
 
 struct
 {
@@ -97,8 +99,8 @@ found:
   p->pid = nextpid++;
 
   p->ticks_left = RSDL_PROC_QUANTUM;
-  set[active][count[active]] = p;
-  count[active]++;
+  activeSet[countActive] = p;
+  countActive++;
   
   release(&ptable.lock);
 
@@ -354,35 +356,7 @@ void scheduler(void)
   struct cpu *c = mycpu();
   c->proc = 0;
 
-  // check if there are still runnable proc in active set
-    int activeset_runnable = 0;
-
-    for (int i=0;i<count[active];i++)
-    {
-      if (set[active][i]->state == RUNNABLE)
-        activeset_runnable++;
-    }
-    
-    //swap active and expired sets if no runnable proc in active set
-    int total_proc = count[0] + count[1];
-    if(activeset_runnable == 0 && total_proc > 2){
-      active = active == 0? 1: 0;
-
-      count[0] += count[1];
-      count[1] = count[0] - count[1];
-      count[0] -= count[1];
-
-      for(int i=0; i<count[active];i++){
-        set[active][i]->ticks_left = RSDL_PROC_QUANTUM;
-      }
-
-      int expired = active == 0? 1: 0;
-      for(int i=0; i<count[expired];i++){
-        set[active][count[active]] = set[expired][i];
-        count[active]++;
-      }
-      count[expired] = 0;
-    }
+ 
   for (;;)
   {
     // Enable interrupts on this processor.
@@ -391,25 +365,56 @@ void scheduler(void)
     // Loop over process table looking for process to run.
     acquire(&ptable.lock);
 
-    
-  
-    for (int i=0;i<count[active];i++)
+     // check if there are still runnable proc in active set
+    int activeset_runnable = 0;
+
+    for (int i=0;i<countActive;i++)
     {
-      if (set[active][i]->state != RUNNABLE)
+      if (activeSet[i]->state == RUNNABLE)
+        activeset_runnable++;
+    }
+    
+    //swap active and expired sets if no runnable proc in active set
+    int total_proc = countActive + countExpired;
+    if(activeset_runnable == 0 && total_proc > 2){
+
+      //transfer the processes in the old active set to tempSet
+      for(int i =0; i<countActive; i++){
+        tempSet[i] = activeSet[i];
+      }
+
+      //transfer the processes in the expired set to activeSet
+      for(int i =0; i<countExpired; i++){
+        activeSet[i] = expiredSet[i];
+        activeSet[i]->ticks_left = RSDL_PROC_QUANTUM;
+      }
+
+      int tempSetCount = countActive;
+      countActive = countExpired;
+      countExpired = 0;
+
+      //add the temp processes in the active set
+      for(int i =0; i<tempSetCount; i++){
+        activeSet[countActive] = tempSet[i];
+        countActive++;
+      }
+
+      
+    }
+  
+    for (int i=0;i<countActive;i++)
+    {
+      if (activeSet[i]->state != RUNNABLE)
         continue;
 
       // Switch to chosen process.  It is the process's job
       // to release ptable.lock and then reacquire it
       // before jumping back to us.
-      p = set[active][i];
+      p = activeSet[i];
       c->proc = p;
       switchuvm(p);
       p->state = RUNNING;
       
-      int curr_set = active;
-      int printing_done = 0;
-
-      printing_sets:
       if (schedlog_active)
       {
         
@@ -419,36 +424,44 @@ void scheduler(void)
         }
         else
         {
-          if (curr_set == active){
-            cprintf("%d|active|0(0)", ticks);
-          }else{
-            cprintf("%d|expired|0(0)", ticks);
-          }
-
+          //print active set
+          cprintf("%d|active|0(0)", ticks);
+          
           struct proc *pp;
           
-          for (int k = 0; k < count[curr_set]; k++)
+          for (int k = 0; k < countActive; k++)
           { 
-            pp = set[curr_set][k];
-            // if (pp->ticks_left > 0)
-            // {
-            //   cprintf(",[%d]%s:%d(%d)", pp->pid, pp->name, pp->state, pp->ticks_left);
-            // }
-            if (pp->state == RUNNING)
+            pp = activeSet[k];
+            
+            if (pp->state == RUNNING){
               cprintf(",[%d]*%s:%d(%d)", pp->pid, pp->name, pp->state, pp->ticks_left);
-            else
+            }
+            else{
               cprintf(",[%d]%s:%d(%d)", pp->pid, pp->name, pp->state, pp->ticks_left);
+            }
           }
           cprintf("\n");
 
-          if(curr_set != active)
-            cprintf("\n");
+          //print expired set
+          cprintf("%d|expired|0(0)", ticks);
+          
+          //struct proc *ppp;
+          
+          for (int k = 0; k < countExpired; k++)
+          { 
+            pp = expiredSet[k];
+            
+            if (pp->state == RUNNING){
+              cprintf(",[%d]*%s:%d(%d)", pp->pid, pp->name, pp->state, pp->ticks_left);
+            }
+            else{
+              cprintf(",[%d]%s:%d(%d)", pp->pid, pp->name, pp->state, pp->ticks_left);
+            }
+          }
+          cprintf("\n");
+
         }
-        printing_done++;
-        if(printing_done != 2){
-          curr_set = curr_set == 0? 1: 0;
-          goto printing_sets;
-        }
+        
       }
       
       swtch(&(c->scheduler), p->context);
@@ -458,23 +471,17 @@ void scheduler(void)
       if (p->ticks_left <= 0){
         //p->ticks_left = RSDL_PROC_QUANTUM;
         //p->state = RUNNABLE;
-        if(active==0){
-          set[1][count[1]] = p;
-          count[1]++;
-          
-        }
-        else{
-          set[0][count[0]] = p;
-          count[0]++;
-        }
+        expiredSet[countExpired] = p;
+        countExpired++;
+
         //delete proc from active set
         //set[active][i] = NULL;
-        for(int j=i;j<count[active]-1;j++){
-          set[active][j] = set[active][j+1];
+        for(int j=i;j<countActive-1;j++){
+         activeSet[j] = activeSet[j+1];
         }
 							  
 				//set[active][count[active]] = NULL;
-				count[active]--;
+				countActive--;
       }
 
       // Process is done running for now.
