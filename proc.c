@@ -354,15 +354,7 @@ void scheduler(void)
   struct cpu *c = mycpu();
   c->proc = 0;
 
-  for (;;)
-  {
-    // Enable interrupts on this processor.
-    sti();
-
-    // Loop over process table looking for process to run.
-    acquire(&ptable.lock);
-
-    // check if there are still runnable proc in active set
+  // check if there are still runnable proc in active set
     int activeset_runnable = 0;
 
     for (int i=0;i<count[active];i++)
@@ -372,17 +364,34 @@ void scheduler(void)
     }
     
     //swap active and expired sets if no runnable proc in active set
-    if(activeset_runnable == 0 && ticks > 0){
+    int total_proc = count[0] + count[1];
+    if(activeset_runnable == 0 && total_proc > 2){
       active = active == 0? 1: 0;
-      int c0 = count[0];
-      int c1 = count[1];
-// 
-//       count[0] = c1;
-//       count[1] = c0;
+
+      count[0] += count[1];
+      count[1] = count[0] - count[1];
+      count[0] -= count[1];
+
       for(int i=0; i<count[active];i++){
         set[active][i]->ticks_left = RSDL_PROC_QUANTUM;
       }
+
+      int expired = active == 0? 1: 0;
+      for(int i=0; i<count[expired];i++){
+        set[active][count[active]] = set[expired][i];
+        count[active]++;
+      }
+      count[expired] = 0;
     }
+  for (;;)
+  {
+    // Enable interrupts on this processor.
+    sti();
+
+    // Loop over process table looking for process to run.
+    acquire(&ptable.lock);
+
+    
   
     for (int i=0;i<count[active];i++)
     {
