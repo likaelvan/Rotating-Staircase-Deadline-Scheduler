@@ -362,20 +362,28 @@ void scheduler(void)
     // Loop over process table looking for process to run.
     acquire(&ptable.lock);
 
-    //check if there are still runnable proc in active set
+    // check if there are still runnable proc in active set
     int activeset_runnable = 0;
+
     for (int i=0;i<count[active];i++)
     {
-      if (set[active][i]->state != RUNNABLE)
+      if (set[active][i]->state == RUNNABLE)
         activeset_runnable++;
     }
-
+    
     //swap active and expired sets if no runnable proc in active set
-    if(activeset_runnable == 0){
-       active = active == 0? 1: 0;
+    if(activeset_runnable == 0 && ticks > 0){
+      active = active == 0? 1: 0;
+      int c0 = count[0];
+      int c1 = count[1];
+// 
+//       count[0] = c1;
+//       count[1] = c0;
+      for(int i=0; i<count[active];i++){
+        set[active][i]->ticks_left = RSDL_PROC_QUANTUM;
+      }
     }
-
-
+  
     for (int i=0;i<count[active];i++)
     {
       if (set[active][i]->state != RUNNABLE)
@@ -411,7 +419,7 @@ void scheduler(void)
           struct proc *pp;
           
           for (int k = 0; k < count[curr_set]; k++)
-          {
+          { 
             pp = set[curr_set][k];
             // if (pp->ticks_left > 0)
             // {
@@ -439,7 +447,7 @@ void scheduler(void)
 
       //move process with consumed quantum to expired set
       if (p->ticks_left <= 0){
-        p->ticks_left = RSDL_PROC_QUANTUM;
+        //p->ticks_left = RSDL_PROC_QUANTUM;
         //p->state = RUNNABLE;
         if(active==0){
           set[1][count[1]] = p;
@@ -463,7 +471,6 @@ void scheduler(void)
       // Process is done running for now.
       // It should have changed its p->state before coming back.
       c->proc = 0;
-
 
       
     }
