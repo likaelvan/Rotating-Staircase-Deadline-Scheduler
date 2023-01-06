@@ -368,6 +368,7 @@ void scheduler(void)
       // before jumping back to us.
       c->proc = p;
       switchuvm(p);
+      
       p->state = RUNNING;
       
       if (schedlog_active)
