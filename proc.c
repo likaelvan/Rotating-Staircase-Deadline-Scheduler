@@ -8,11 +8,12 @@
 #include "spinlock.h"
 #include "rsdl.h"
 
-struct proc* activeSet[64];
-struct proc* expiredSet[64];
-struct proc* tempSet[64];
-int countActive = 0;
-int countExpired = 0;
+struct proc *activeSet[RSDL_LEVELS][64];
+struct proc *expiredSet[RSDL_LEVELS][64];
+struct proc *tempSet[64];
+
+int countActive[RSDL_LEVELS] = {0};
+int countExpired[RSDL_LEVELS] = {0};
 
 struct
 {
@@ -99,9 +100,9 @@ found:
   p->pid = nextpid++;
 
   p->ticks_left = RSDL_PROC_QUANTUM;
-  activeSet[countActive] = p;
-  countActive++;
-  
+  activeSet[RSDL_STARTING_LEVEL][countActive[RSDL_STARTING_LEVEL]] = p;
+  countActive[RSDL_STARTING_LEVEL]++;
+
   release(&ptable.lock);
 
   // Allocate kernel stack.
@@ -356,7 +357,6 @@ void scheduler(void)
   struct cpu *c = mycpu();
   c->proc = 0;
 
- 
   for (;;)
   {
     // Enable interrupts on this processor.
@@ -365,118 +365,149 @@ void scheduler(void)
     // Loop over process table looking for process to run.
     acquire(&ptable.lock);
 
-     // check if there are still runnable proc in active set
-    int activeset_runnable = 0;
-
-    for (int i=0;i<countActive;i++)
+    for (int i = 0; i < RSDL_LEVELS; i++)
     {
-      if (activeSet[i]->state == RUNNABLE)
-        activeset_runnable++;
-    }
-    
-    //swap active and expired sets if no runnable proc in active set
-    int total_proc = countActive + countExpired;
-    if(activeset_runnable == 0 && total_proc > 2){
-
-      //transfer the processes in the old active set to tempSet
-      for(int i =0; i<countActive; i++){
-        tempSet[i] = activeSet[i];
-      }
-
-      //transfer the processes in the expired set to activeSet
-      for(int i =0; i<countExpired; i++){
-        activeSet[i] = expiredSet[i];
-        activeSet[i]->ticks_left = RSDL_PROC_QUANTUM;
-      }
-
-      int tempSetCount = countActive;
-      countActive = countExpired;
-      countExpired = 0;
-
-      //add the temp processes in the active set
-      for(int i =0; i<tempSetCount; i++){
-        activeSet[countActive] = tempSet[i];
-        countActive++;
-      }
-
-      
-    }
-  
-    for (int i=0;i<countActive;i++)
-    {
-      if (activeSet[i]->state != RUNNABLE)
-        continue;
-
-      // Switch to chosen process.  It is the process's job
-      // to release ptable.lock and then reacquire it
-      // before jumping back to us.
-      p = activeSet[i];
-      c->proc = p;
-      switchuvm(p);
-      p->state = RUNNING;
-      
-      if (schedlog_active)
+      for (int j = 0; j < countActive[i]; j++)
       {
-        
-        if (ticks > schedlog_lasttick)
-        {
-          schedlog_active = 0;
-        }
-        else
-        {
-          //print active set
-          cprintf("%d|active|0(0)", ticks);
-          
-          struct proc *pp;
-          
-          for (int k = 0; k < countActive; k++)
-          { 
-            pp = activeSet[k];
-            cprintf(",[%d]%s:%d(%d)", pp->pid, pp->name, pp->state, pp->ticks_left);
-          }
-          cprintf("\n");
-
-          //print expired set
-          cprintf("%d|expired|0(0)", ticks);
-          
-          //struct proc *ppp;
-          
-          for (int k = 0; k < countExpired; k++)
-          { 
-            pp = expiredSet[k];
-            cprintf(",[%d]%s:%d(%d)", pp->pid, pp->name, pp->state, pp->ticks_left);
-          }
-          cprintf("\n\n");
-        }
-        
+        if (activeSet[i][j]->state == RUNNABLE)
+          goto no_swap;
       }
-      
-      swtch(&(c->scheduler), p->context);
-      switchkvm();
-
-      //move process with consumed quantum to expired set
-      if (p->ticks_left <= 0){
-        //p->ticks_left = RSDL_PROC_QUANTUM;
-        //p->state = RUNNABLE;
-        expiredSet[countExpired] = p;
-        countExpired++;
-
-        //delete proc from active set
-        //set[active][i] = NULL;
-        for(int j=i;j<countActive-1;j++){
-         activeSet[j] = activeSet[j+1];
-        }
-							  
-				//set[active][count[active]] = NULL;
-				countActive--;
-      }
-
-      // Process is done running for now.
-      // It should have changed its p->state before coming back.
-      c->proc = 0;
-
-      
     }
+
+    // Active Set -> Temp Set
+    // Expired Set -> Active Set
+    // Temp Set -> Active Set
+    int iterator = 0;
+    for (int i = 0; i < RSDL_LEVELS; i++)
+    {
+      for (int j = 0; j < countActive[i]; j++)
+      {
+        tempSet[iterator] = activeSet[i][j];
+        iterator++;
+      }
+
+      for (int j = 0; j < countExpired[i]; j++)
+      {
+        activeSet[i][j] = expiredSet[i][j];
+      }
+    }
+
+    // for (int i = 0; i < iterator; i++)
+    // {
+    //   activeSet[RSDL_STARTING_LEVEL][countActive[RSDL_STARTING_LEVEL]] = tempSet[i];
+    //   countActive[RSDL_STARTING_LEVEL]++;
+    // }
+
+    no_swap:
+    for (int i = 0; i < RSDL_LEVELS; i++)
+    {
+      for (int j = 0; j < countActive[i]; j++)
+      {
+        if (activeSet[i][j]->state == RUNNABLE)
+        {
+          p = activeSet[i][j];
+          c->proc = p;
+          switchuvm(p);
+          p->state = RUNNING;
+
+          if (schedlog_active)
+          {
+            if (ticks > schedlog_lasttick)
+            {
+              schedlog_active = 0;
+            }
+            else
+            {
+              struct proc *pp;
+
+              // print active set
+              for (int k = 0; k < RSDL_LEVELS; k++)
+              {
+                cprintf("%d|active|%d(0)", ticks, k);
+                for (int l = 0; l < countActive[k]; l++)
+                {
+                  pp = activeSet[k][l];
+                  cprintf(",[%d]%s:%d(%d)", pp->pid, pp->name, pp->state, pp->ticks_left);                  
+                }
+                cprintf("\n");
+              }
+
+              // print expired set
+              for (int k = 0; k < RSDL_LEVELS; k++)
+              {
+                cprintf("%d|expired|%d(0)", ticks, k);
+                for (int l = 0; l < countExpired[k]; l++)
+                {
+                  pp = expiredSet[k][l];
+                  cprintf(",[%d]%s:%d(%d)", pp->pid, pp->name, pp->state, pp->ticks_left);                  
+                }
+                cprintf("\n");
+              }
+              cprintf("\n");
+            }
+          }
+
+          swtch(&(c->scheduler), p->context);
+          switchkvm();
+
+          // move process with consumed quantum to next level or expired set
+          if (p->ticks_left <= 0)
+          {
+            if(i == RSDL_LEVELS-1){
+              expiredSet[RSDL_STARTING_LEVEL][countExpired[RSDL_STARTING_LEVEL]] =p;
+              countExpired[RSDL_STARTING_LEVEL]++;
+            }
+            else{
+              activeSet[i+1][countActive[i+1]] = p;
+              countActive[i+1]++;
+            }
+            
+
+            // delete proc from active set
+            // set[active][i] = NULL;
+            for (int m = i; m < countActive[i] - 1; m++)
+            {
+              activeSet[i][m] = activeSet[i][m + 1];
+            }
+
+            // set[active][count[active]] = NULL;
+            countActive[i]--;
+          }
+
+          // Process is done running for now.
+          // It should have changed its p->state before coming back.
+          c->proc = 0;
+        }
+      }
+    }
+
+    // //swap active and expired sets if no runnable proc in active set
+    // int total_proc = countActive + countExpired;
+    // if(activeset_runnable == 0 && total_proc > 3){
+
+    //   //transfer the processes in the old active set to tempSet
+    //   for(int i =0; i<countActive; i++){
+    //     tempSet[i] = activeSet[i];
+    //   }
+
+    //   //transfer the processes in the expired set to activeSet
+    //   for(int i =0; i<countExpired; i++){
+    //     activeSet[i] = expiredSet[i];
+    //     activeSet[i]->ticks_left = RSDL_PROC_QUANTUM;
+    //   }
+
+    //   int tempSetCount = countActive;
+    //   countActive = countExpired;
+    //   countExpired = 0;
+
+    //   //add the temp processes in the active set
+    //   for(int i =0; i<tempSetCount; i++){
+    //     activeSet[countActive] = tempSet[i];
+    //     countActive++;
+    //   }
+
+    // }
+
     release(&ptable.lock);
   }
 }
