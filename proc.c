@@ -365,30 +365,51 @@ void scheduler(void)
     // Loop over process table looking for process to run.
     acquire(&ptable.lock);
 
+    // Skips this step if we are still initializing
+    int activeset_runnable = 0;
+    int total_proc = 0;
+
     for (int i = 0; i < RSDL_LEVELS; i++)
     {
       for (int j = 0; j < countActive[i]; j++)
       {
+        total_proc++;
         if (activeSet[i][j]->state == RUNNABLE)
-          goto no_swap;
+          activeset_runnable++;
       }
+
     }
 
     // Active Set -> Temp Set
     // Expired Set -> Active Set
     // Temp Set -> Active Set
-    int iterator = 0;
-    for (int i = 0; i < RSDL_LEVELS; i++)
+
+    if (activeset_runnable == 0 && total_proc > 3)
     {
-      for (int j = 0; j < countActive[i]; j++)
+      int iterator = 0;
+      for (int i = 0; i < RSDL_LEVELS; i++)
       {
-        tempSet[iterator] = activeSet[i][j];
-        iterator++;
+        for (int j = 0; j < countActive[i]; j++)
+        {
+          tempSet[iterator] = activeSet[i][j];
+          iterator++;
+        }
+
+        for (int j = 0; j < countExpired[i]; j++)
+        {
+          activeSet[i][j] = expiredSet[i][j];
+          activeSet[i][j]->ticks_left = RSDL_PROC_QUANTUM;
+        }
       }
 
-      for (int j = 0; j < countExpired[i]; j++)
-      {
-        activeSet[i][j] = expiredSet[i][j];
+      //swap counters
+      for(int i=0; i<RSDL_LEVELS; i++){
+        countActive[i] = countExpired[i];
+        countExpired[i] = 0;
+      }
+      for(int i =0; i<iterator;i++){
+        activeSet[RSDL_STARTING_LEVEL][countActive[RSDL_STARTING_LEVEL]] =  tempSet[i];
+        countActive[RSDL_STARTING_LEVEL]++;
       }
     }
 
@@ -398,7 +419,7 @@ void scheduler(void)
     //   countActive[RSDL_STARTING_LEVEL]++;
     // }
 
-    no_swap:
+   
     for (int i = 0; i < RSDL_LEVELS; i++)
     {
       for (int j = 0; j < countActive[i]; j++)
@@ -454,18 +475,20 @@ void scheduler(void)
           if (p->ticks_left <= 0)
           {
             if(i == RSDL_LEVELS-1){
-              expiredSet[RSDL_STARTING_LEVEL][countExpired[RSDL_STARTING_LEVEL]] =p;
+              expiredSet[RSDL_STARTING_LEVEL][countExpired[RSDL_STARTING_LEVEL]] = p;
               countExpired[RSDL_STARTING_LEVEL]++;
             }
             else{
               activeSet[i+1][countActive[i+1]] = p;
+              activeSet[i+1][countActive[i+1]]->ticks_left = RSDL_PROC_QUANTUM;
               countActive[i+1]++;
             }
             
 
             // delete proc from active set
             // set[active][i] = NULL;
-            for (int m = i; m < countActive[i] - 1; m++)
+            // activeSet[i][j]
+            for (int m = j; m < countActive[i] - 1; m++)
             {
               activeSet[i][m] = activeSet[i][m + 1];
             }
