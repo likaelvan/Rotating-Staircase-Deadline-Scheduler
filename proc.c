@@ -458,8 +458,7 @@ void scheduler(void)
               cprintf(",[%d]%s:%d(%d)", pp->pid, pp->name, pp->state, pp->ticks_left);
             }
           }
-          cprintf("\n");
-
+          cprintf("\n\n");
         }
         
       }
