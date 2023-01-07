@@ -432,13 +432,7 @@ void scheduler(void)
           for (int k = 0; k < countActive; k++)
           { 
             pp = activeSet[k];
-            
-            if (pp->state == RUNNING){
-              cprintf(",[%d]*%s:%d(%d)", pp->pid, pp->name, pp->state, pp->ticks_left);
-            }
-            else{
-              cprintf(",[%d]%s:%d(%d)", pp->pid, pp->name, pp->state, pp->ticks_left);
-            }
+            cprintf(",[%d]%s:%d(%d)", pp->pid, pp->name, pp->state, pp->ticks_left);
           }
           cprintf("\n");
 
@@ -450,13 +444,7 @@ void scheduler(void)
           for (int k = 0; k < countExpired; k++)
           { 
             pp = expiredSet[k];
-            
-            if (pp->state == RUNNING){
-              cprintf(",[%d]*%s:%d(%d)", pp->pid, pp->name, pp->state, pp->ticks_left);
-            }
-            else{
-              cprintf(",[%d]%s:%d(%d)", pp->pid, pp->name, pp->state, pp->ticks_left);
-            }
+            cprintf(",[%d]%s:%d(%d)", pp->pid, pp->name, pp->state, pp->ticks_left);
           }
           cprintf("\n\n");
         }
