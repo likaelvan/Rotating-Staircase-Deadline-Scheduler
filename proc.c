@@ -376,7 +376,7 @@ void scheduler(void)
     
     //swap active and expired sets if no runnable proc in active set
     int total_proc = countActive + countExpired;
-    if(activeset_runnable == 0 && total_proc > 2){
+    if(activeset_runnable == 0 && total_proc > 3){
 
       //transfer the processes in the old active set to tempSet
       for(int i =0; i<countActive; i++){
